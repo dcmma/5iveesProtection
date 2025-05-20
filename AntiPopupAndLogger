@@ -115,6 +115,28 @@ local function isPrivacyUrl(url)
     return false
 end
 
+-- Block queue on teleport for added security
+
+if queue_on_teleport then
+    local old_queue = queue_on_teleport
+    queue_on_teleport = function(teleportCode)
+        local code = tostring(teleportCode or "")
+        local lowerCode = code:lower()
+        if not isUrlAllowed(lowerCode) then
+            if isDiscordUrl(lowerCode) then
+                warn("[Anti-Discord] Blocked queue_on_teleport with Discord URL: "..code)
+                log_to_file(getgenv().AntiDiscordLogPath, "queue_on_teleport", code)
+                return
+            elseif isPrivacyUrl(lowerCode) then
+                warn("[Privacy Protection] Blocked queue_on_teleport with privacy URL: "..code)
+                log_to_file(getgenv().PrivacyLogPath, "queue_on_teleport", code)
+                return
+            end
+        end
+        return old_queue(teleportCode)
+    end
+end
+
 -- Hook and protect HTTP functions dynamically
 local function hook_http(func_name)
     local fn = rawget(getgenv(), func_name)
