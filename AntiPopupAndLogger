@@ -1,0 +1,302 @@
+--== CONFIG ==--
+getgenv().AntiDiscordLogPath = "Protections/anti_discord_log.txt"
+getgenv().PrivacyLogPath = "Protections/privacy_block_log.txt"
+getgenv().EnableAntiDiscordLogs = true
+getgenv().EnablePrivacyLogs = true
+
+local ProtectionsFolderName = "Protections"
+local HWIDExceptionsFileName = "hwid_exceptions.txt"
+local hwidExceptions = {}
+
+-- Logging helper
+local warn = securewarn or warn
+if not securewarn then
+    print("[Warning] securewarn not found; using warn. Regular warnings may be logged/traced.")
+end
+
+-- Ensure protections folder exists
+local function ensureProtectionsFolder()
+    if isfolder and not isfolder(ProtectionsFolderName) then
+        makefolder(ProtectionsFolderName)
+    elseif not isfolder then
+        warn("[Protections] Folder creation functions missing; logs may fail.")
+    end
+end
+
+-- Load HWID exceptions from file ignoring comments
+local function loadHWIDExceptions()
+    hwidExceptions = {}
+    local path = ProtectionsFolderName.."/"..HWIDExceptionsFileName
+    if isfile and isfile(path) then
+        local content = readfile(path)
+        for line in content:gmatch("[^\r\n]+") do
+            local trimmed = line:match("^%s*(.-)%s*$")
+            if trimmed ~= "" and not trimmed:match("^%-%-") then
+                table.insert(hwidExceptions, trimmed:lower())
+            end
+        end
+    else
+        if writefile then
+            local header = 
+                "-- Enter script names that need HWID exceptions, one per line.\n" ..
+                "-- Lines starting with -- are comments and ignored.\n\n" ..
+                "-- Example:\n\n" ..
+                "-- Your Script.txt\n" ..
+                "-- AnotherScript.txt\n" ..
+                "-- Works for .txt and .lua files\n"
+            writefile(path, header)
+        end
+    end
+end
+
+-- Check if calling script is trusted (based on exceptions)
+local function isTrustedScript()
+    local info = debug.getinfo(3, "S")
+    if info and info.source then
+        local src = info.source:lower()
+        for _, exc in pairs(hwidExceptions) do
+            if src:find(exc) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+-- Logging function
+local function log_to_file(path, source, detail)
+    if not path or not source or not detail then return end
+    local logLine = string.format("[%s] Blocked %s: %s\n", os.date("%Y-%m-%d %H:%M:%S"), source, detail)
+    if writefile and isfile and getgenv().EnableAntiDiscordLogs then
+        if not isfile(path) then
+            writefile(path, logLine)
+        else
+            appendfile(path, logLine)
+        end
+    else
+        warn("[Unified Protection] Unable to write to file; logging disabled or disabled in config.")
+    end
+end
+
+-- URL allowlist & denylist for blocking
+local allowedUrls = {
+    "mytrustedapi.com",
+    "allowedsite.org"
+}
+
+local discordDomains = {
+    "discord.gg", "discordapp.com", "discord.com"
+}
+
+local privacyDomains = {
+    "ipify.org", "ip-api.com", "ifconfig.me", "icanhazip.com",
+    "whatismyipaddress.com", "grabify.link", "iplogger.org", "iplogger.com",
+    "iplogger.co", "yip.su", "2no.co", "blasze.com"
+}
+
+local function isUrlAllowed(url)
+    url = url:lower()
+    for _, allowed in pairs(allowedUrls) do
+        if url:find(allowed:lower()) then
+            return true
+        end
+    end
+    return false
+end
+
+local function isDiscordUrl(url)
+    url = url:lower()
+    for _, d in pairs(discordDomains) do
+        if url:find(d) then return true end
+    end
+    return false
+end
+
+local function isPrivacyUrl(url)
+    url = url:lower()
+    for _, p in pairs(privacyDomains) do
+        if url:find(p) then return true end
+    end
+    return false
+end
+
+-- Hook and protect HTTP functions dynamically
+local function hook_http(func_name)
+    local fn = rawget(getgenv(), func_name)
+    if type(fn) == "function" then
+        if hookfunction then
+            hookfunction(fn, function(data)
+                local url = nil
+                if type(data) == "table" then
+                    url = data.Url or data.URL or data.url
+                elseif type(data) == "string" then
+                    url = data
+                end
+                url = url or ""
+                if not isUrlAllowed(url) then
+                    if isDiscordUrl(url) then
+                        warn("[Anti-Discord] Blocked HTTP request to: "..url)
+                        log_to_file(getgenv().AntiDiscordLogPath, func_name, url)
+                        return nil
+                    elseif isPrivacyUrl(url) then
+                        warn("[Privacy Protection] Blocked HTTP request to: "..url)
+                        log_to_file(getgenv().PrivacyLogPath, func_name, url)
+                        return nil
+                    end
+                end
+                return fn(data)
+            end)
+        else
+            warn("[Unified Protection] hookfunction not found; cannot hook HTTP function: "..func_name)
+        end
+    end
+end
+
+local function detect_and_hook_http()
+    for k, v in pairs(getgenv()) do
+        if type(v) == "function" and k:lower():find("http") then
+            hook_http(k)
+        end
+    end
+end
+
+-- Block suspicious system commands and clipboard manipulations related to Discord or privacy leaks
+local function block_discord_methods()
+    if os and os.execute then
+        local old_execute = os.execute
+        os.execute = function(cmd)
+            if type(cmd) == "string" and cmd:lower():find("discord") then
+                warn("[Anti-Discord] Blocked os.execute: "..cmd)
+                log_to_file(getgenv().AntiDiscordLogPath, "os.execute", cmd)
+                return nil
+            end
+            return old_execute(cmd)
+        end
+    end
+
+    if setclipboard then
+        local old_clipboard = setclipboard
+        setclipboard = function(text)
+            if type(text) == "string" and text:lower():find("discord.gg") then
+                warn("[Anti-Discord] Blocked setclipboard: "..text)
+                log_to_file(getgenv().AntiDiscordLogPath, "setclipboard", text)
+                return nil
+            end
+            return old_clipboard(text)
+        end
+    end
+end
+
+local function block_privacy_methods()
+    -- Block environment vars
+    if os and os.getenv then
+        local old_getenv = os.getenv
+        os.getenv = function(var)
+            if type(var) == "string" then
+                local uvar = var:upper()
+                local sensitive_vars = {
+                    "HWID", "COMPUTERNAME", "USERNAME", "USERDOMAIN",
+                    "PROCESSOR_IDENTIFIER", "IP", "MAC", "PUBLICIP",
+                    "USERPROFILE", "LOCALAPPDATA"
+                }
+                if uvar == "HWID" and not isTrustedScript() then
+                    warn("[Privacy Protection] Blocked os.getenv call for HWID from untrusted script.")
+                    log_to_file(getgenv().PrivacyLogPath, "os.getenv", var)
+                    return nil
+                end
+                for _, sv in pairs(sensitive_vars) do
+                    if uvar == sv then
+                        warn("[Privacy Protection] Blocked os.getenv call for: "..var)
+                        log_to_file(getgenv().PrivacyLogPath, "os.getenv", var)
+                        return nil
+                    end
+                end
+                -- Allow only safe env vars (PATH, HOME, TEMP)
+                local allowedEnvVars = {"PATH", "HOME", "TEMP"}
+                for _, allowed in pairs(allowedEnvVars) do
+                    if uvar == allowed then
+                        return old_getenv(var)
+                    end
+                end
+                -- Block anything else suspicious by default
+                warn("[Privacy Protection] Blocked os.getenv call for unknown var: "..var)
+                log_to_file(getgenv().PrivacyLogPath, "os.getenv", var)
+                return nil
+            end
+            return old_getenv(var)
+        end
+    end
+
+    -- Block suspicious os.execute commands
+    if os and os.execute then
+        local old_execute = os.execute
+        os.execute = function(cmd)
+            if type(cmd) == "string" then
+                local suspicious_cmds = {
+                    "ipconfig", "ifconfig", "systeminfo", "wmic",
+                    "powershell", "getmac", "netstat", "arp", "tracert", "nslookup"
+                }
+                for _, sc in pairs(suspicious_cmds) do
+                    if cmd:lower():find(sc) then
+                        warn("[Privacy Protection] Blocked os.execute command: "..cmd)
+                        log_to_file(getgenv().PrivacyLogPath, "os.execute", cmd)
+                        return nil
+                    end
+                end
+            end
+            return old_execute(cmd)
+        end
+    end
+
+    -- Block suspicious io.popen commands
+    if io and io.popen then
+        local old_popen = io.popen
+        io.popen = function(cmd)
+            if type(cmd) == "string" then
+                local suspicious_cmds = {
+                    "ipconfig", "ifconfig", "systeminfo", "wmic",
+                    "powershell", "getmac", "netstat", "arp", "tracert", "nslookup"
+                }
+                for _, sc in pairs(suspicious_cmds) do
+                    if cmd:lower():find(sc) then
+                        warn("[Privacy Protection] Blocked io.popen command: "..cmd)
+                        log_to_file(getgenv().PrivacyLogPath, "io.popen", cmd)
+                        return nil
+                    end
+                end
+            end
+            return old_popen(cmd)
+        end
+    end
+
+    -- Overwrite global keys if present
+    local genv = getgenv()
+    local blocked_keys = {
+        "ip", "publicip", "mac", "userid", "useridhash", "hwid"
+    }
+    for _, key in pairs(blocked_keys) do
+        if genv[key] then
+            warn("[Privacy Protection] Overriding getgenv()['"..key.."']")
+            log_to_file(getgenv().PrivacyLogPath, "getgenv", key)
+            genv[key] = nil
+        end
+    end
+end
+
+-- Initialization
+
+ensureProtectionsFolder()
+loadHWIDExceptions()
+detect_and_hook_http()
+block_discord_methods()
+block_privacy_methods()
+
+-- Friendly startup message with exceptions count
+local exceptionCount = #hwidExceptions
+if exceptionCount == 0 then
+    print("[✅ 5ivee's Anti-Discord Popup + Anti-Logger loaded with no HWID exceptions.]")
+elseif exceptionCount == 1 then
+    print("[✅ 5ivee's Anti-Discord Popup + Anti-Logger loaded with 1 HWID exception.]")
+else
+    print("[✅ 5ivee's Anti-Discord Popup + Anti-Logger loaded with "..exceptionCount.." HWID exceptions.]")
+end
