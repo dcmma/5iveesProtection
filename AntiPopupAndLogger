@@ -197,7 +197,7 @@ local function block_privacy_methods()
                 local sensitive_vars = {
                     "HWID", "COMPUTERNAME", "USERNAME", "USERDOMAIN",
                     "PROCESSOR_IDENTIFIER", "IP", "MAC", "PUBLICIP",
-                    "USERPROFILE", "LOCALAPPDATA"
+                    "USERPROFILE", "LOCALAPPDATA" -- Remove LOCALAPPDATA if you are using an exploit that stores workspace and such in there. (Seliware, AWP, etc.)
                 }
                 if uvar == "HWID" and not isTrustedScript() then
                     warn("[Privacy Protection] Blocked os.getenv call for HWID from untrusted script.")
