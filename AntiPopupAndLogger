@@ -9,10 +9,7 @@ local HWIDExceptionsFileName = "hwid_exceptions.txt"
 local hwidExceptions = {}
 
 -- Logging helper
-local warn = securewarn or warn
-if not securewarn then
-    print("[Warning] securewarn not found; using warn. Regular warnings may be logged/traced.")
-end
+local warn = warn
 
 -- Ensure protections folder exists
 local function ensureProtectionsFolder()
@@ -78,33 +75,18 @@ local function log_to_file(path, source, detail)
     end
 end
 
--- URL allowlist & denylist for blocking
+-- URL allowlist & denylist
 local allowedUrls = {
-    "mytrustedapi.com",
-    "allowedsite.org",
-    "luarmor.net",
-    "roblox.com",
-    "robloxapi.com",
-    "setup.roblox.com",
-    "friends.roblox.com",
-    "presence.roblox.com",
-    "chat.roblox.com",
-    "realtime.roblox.com",
-    "ws.roblox.com",
-    "web.roblox.com",
-    "luarmor.net",
-    "cdn.luarmor.net",
-    "api.luarmor.net"
+    "mytrustedapi.com", "allowedsite.org", "luarmor.net", "roblox.com", "robloxapi.com",
+    "setup.roblox.com", "friends.roblox.com", "presence.roblox.com", "chat.roblox.com",
+    "realtime.roblox.com", "ws.roblox.com", "web.roblox.com", "cdn.luarmor.net", "api.luarmor.net"
 }
 
-local discordDomains = {
-    "discord.gg", "discordapp.com", "discord.com"
-}
+local discordDomains = { "discord.gg", "discordapp.com", "discord.com" }
 
 local privacyDomains = {
-    "ipify.org", "ip-api.com", "ifconfig.me", "icanhazip.com",
-    "whatismyipaddress.com", "grabify.link", "iplogger.org", "iplogger.com",
-    "iplogger.co", "yip.su", "2no.co", "blasze.com"
+    "ipify.org", "ip-api.com", "ifconfig.me", "icanhazip.com", "whatismyipaddress.com",
+    "grabify.link", "iplogger.org", "iplogger.com", "iplogger.co", "yip.su", "2no.co", "blasze.com"
 }
 
 local function isUrlAllowed(url)
@@ -173,7 +155,7 @@ local function detect_and_hook_http()
     end
 end
 
--- Block suspicious system commands and clipboard manipulations related to Discord or privacy leaks
+-- Block suspicious system commands and clipboard manipulations
 local function block_discord_methods()
     if os and os.execute then
         local old_execute = os.execute
@@ -201,7 +183,6 @@ local function block_discord_methods()
 end
 
 local function block_privacy_methods()
-    -- Block environment vars
     if os and os.getenv then
         local old_getenv = os.getenv
         os.getenv = function(var)
@@ -210,7 +191,7 @@ local function block_privacy_methods()
                 local sensitive_vars = {
                     "HWID", "COMPUTERNAME", "USERNAME", "USERDOMAIN",
                     "PROCESSOR_IDENTIFIER", "IP", "MAC", "PUBLICIP",
-                    "USERPROFILE", "LOCALAPPDATA" -- Remove LOCALAPPDATA if you are using an exploit that stores workspace and such in there. (Seliware, AWP, etc.)
+                    "USERPROFILE", "LOCALAPPDATA"
                 }
                 if uvar == "HWID" and not isTrustedScript() then
                     warn("[Privacy Protection] Blocked os.getenv call for HWID from untrusted script.")
@@ -224,14 +205,12 @@ local function block_privacy_methods()
                         return nil
                     end
                 end
-                -- Allow only safe env vars (PATH, HOME, TEMP)
-                local allowedEnvVars = {"PATH", "HOME", "TEMP"}
+                local allowedEnvVars = { "PATH", "HOME", "TEMP" }
                 for _, allowed in pairs(allowedEnvVars) do
                     if uvar == allowed then
                         return old_getenv(var)
                     end
                 end
-                -- Block anything else suspicious by default
                 warn("[Privacy Protection] Blocked os.getenv call for unknown var: "..var)
                 log_to_file(getgenv().PrivacyLogPath, "os.getenv", var)
                 return nil
@@ -240,7 +219,6 @@ local function block_privacy_methods()
         end
     end
 
-    -- Block suspicious os.execute commands
     if os and os.execute then
         local old_execute = os.execute
         os.execute = function(cmd)
@@ -261,7 +239,6 @@ local function block_privacy_methods()
         end
     end
 
-    -- Block suspicious io.popen commands
     if io and io.popen then
         local old_popen = io.popen
         io.popen = function(cmd)
@@ -282,7 +259,6 @@ local function block_privacy_methods()
         end
     end
 
-    -- Overwrite global keys if present
     local genv = getgenv()
     local blocked_keys = {
         "ip", "publicip", "mac", "userid", "useridhash", "hwid"
@@ -297,14 +273,13 @@ local function block_privacy_methods()
 end
 
 -- Initialization
-
 ensureProtectionsFolder()
 loadHWIDExceptions()
 detect_and_hook_http()
 block_discord_methods()
 block_privacy_methods()
 
--- Friendly startup message with exceptions count
+-- Startup message
 local exceptionCount = #hwidExceptions
 if exceptionCount == 0 then
     print("[✅ 5ivee's Anti-Discord Popup + Anti-Logger loaded with no HWID exceptions.]")
