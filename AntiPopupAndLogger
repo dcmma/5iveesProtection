@@ -81,7 +81,20 @@ end
 -- URL allowlist & denylist for blocking
 local allowedUrls = {
     "mytrustedapi.com",
-    "allowedsite.org"
+    "allowedsite.org",
+    "luarmor.net",
+    "roblox.com",
+    "robloxapi.com",
+    "setup.roblox.com",
+    "friends.roblox.com",
+    "presence.roblox.com",
+    "chat.roblox.com",
+    "realtime.roblox.com",
+    "ws.roblox.com",
+    "web.roblox.com",
+    "luarmor.net",
+    "cdn.luarmor.net",
+    "api.luarmor.net"
 }
 
 local discordDomains = {
