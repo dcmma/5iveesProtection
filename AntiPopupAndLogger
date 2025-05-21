@@ -1,28 +1,45 @@
+-- THIS BREAKS LUARMOR & LURAPH SCRIPTS! EXECUTE THEM BEFORE ENABLING THIS WITH THE SCROLL LOCK KEY
+
 --== CONFIG ==--
 getgenv().AntiDiscordLogPath = "Protections/anti_discord_log.txt"
 getgenv().PrivacyLogPath = "Protections/privacy_block_log.txt"
-getgenv().EnableAntiDiscordLogs = true
+getgenv().EnableAntiDiscordLogs = true -- Always enabled internally
 getgenv().EnablePrivacyLogs = true
 
 local ProtectionsFolderName = "Protections"
 local HWIDExceptionsFileName = "hwid_exceptions.txt"
 local hwidExceptions = {}
 
-local function warn(...) warn(...) end
+--== Services ==--
+local UserInputService = game:GetService("UserInputService")
+local StarterGui = game:GetService("StarterGui")
 
--- Ensure protections folder exists
+--== Flags ==--
+local isActivated = false
+local protectionsPaused = false
+local lastScrollPress = 0
+
+--== Notify Function ==--
+local function notify(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 5
+        })
+    end)
+end
+
+--== Helpers ==--
 local function ensureProtectionsFolder()
     if isfolder and not isfolder(ProtectionsFolderName) then
         makefolder(ProtectionsFolderName)
-    elseif not isfolder then
-        warn("[Protections] Folder creation functions missing; logs may fail.")
     end
 end
 
--- Load HWID exceptions from file
 local function loadHWIDExceptions()
     hwidExceptions = {}
-    local path = ProtectionsFolderName.."/"..HWIDExceptionsFileName
+    local path = ProtectionsFolderName .. "/" .. HWIDExceptionsFileName
     if isfile and isfile(path) then
         for line in readfile(path):gmatch("[^\r\n]+") do
             local trimmed = line:match("^%s*(.-)%s*$")
@@ -31,14 +48,14 @@ local function loadHWIDExceptions()
             end
         end
     elseif writefile then
-        writefile(path,
-            "-- Enter script names that need HWID exceptions, one per line.\n" ..
-            "-- Example:\n\n-- script1.lua\n-- trusted_script.txt\n\n"
-        )
+        writefile(path, "-- Put trusted script names here.\n-- Example: script1.lua\n")
     end
+
+    print(string.format("✅ [Condom Anti-Discord & HWID Protection loaded with %d exception%s]",
+        #hwidExceptions,
+        #hwidExceptions == 1 and "" or "s"))
 end
 
--- Check if calling script is trusted
 local function isTrustedScript()
     local info = debug.getinfo(3, "S")
     if info and info.source then
@@ -52,28 +69,11 @@ local function isTrustedScript()
     return false
 end
 
--- Override GetClientId to block or error
-local function protectHWID()
-    local RAS = game:GetService("RbxAnalyticsService")
-    if RAS and RAS.GetClientId then
-        local old = RAS.GetClientId
-        local errorMessage = "[HWID Protection] Access to GetClientId() is blocked."
-
-        hookfunction(old, function(...)
-            if isTrustedScript() then
-                return old(...)
-            else
-                error(errorMessage, 2)
-            end
-        end)
-    end
-end
-
--- Logging utility
+--== Always-On Anti-Discord ==--
 local function log_to_file(path, source, detail)
     if not path or not source or not detail then return end
-    local line = string.format("[%s] Blocked %s: %s\n", os.date("%Y-%m-%d %H:%M:%S"), source, detail)
-    if writefile and isfile and getgenv().EnableAntiDiscordLogs then
+    local line = string.format("[%s] Blocked %s: %s\n", os.date(), source, detail)
+    if writefile and isfile then
         if not isfile(path) then
             writefile(path, line)
         else
@@ -82,11 +82,11 @@ local function log_to_file(path, source, detail)
     end
 end
 
--- URL checks
 local allowedUrls = {
     "mytrustedapi.com", "allowedsite.org", "luarmor.net", "roblox.com", "robloxapi.com",
     "setup.roblox.com", "friends.roblox.com", "presence.roblox.com", "chat.roblox.com",
-    "realtime.roblox.com", "ws.roblox.com", "web.roblox.com", "cdn.luarmor.net", "api.luarmor.net"
+    "realtime.roblox.com", "ws.roblox.com", "web.roblox.com", "cdn.luarmor.net", "api.luarmor.net",
+    "raw.githubusercontent.com", "github.com", "gist.github.com", "api.github.com"
 }
 
 local discordDomains = { "discord.gg", "discordapp.com", "discord.com" }
@@ -97,7 +97,7 @@ local privacyDomains = {
 
 local function isUrlAllowed(url)
     url = url:lower()
-    for _, allowed in pairs(allowedUrls) do
+    for _, allowed in ipairs(allowedUrls) do
         if url:find(allowed, 1, true) then return true end
     end
     return false
@@ -105,7 +105,7 @@ end
 
 local function isDiscordUrl(url)
     url = url:lower()
-    for _, d in pairs(discordDomains) do
+    for _, d in ipairs(discordDomains) do
         if url:find(d, 1, true) then return true end
     end
     return false
@@ -113,47 +113,41 @@ end
 
 local function isPrivacyUrl(url)
     url = url:lower()
-    for _, p in pairs(privacyDomains) do
+    for _, p in ipairs(privacyDomains) do
         if url:find(p, 1, true) then return true end
     end
     return false
 end
 
--- queue_on_teleport hook
-if queue_on_teleport then
-    local old = queue_on_teleport
-    queue_on_teleport = function(code)
-        local str = tostring(code):lower()
-        if not isUrlAllowed(str) then
-            if isDiscordUrl(str) then
-                warn("[Anti-Discord] Blocked queue_on_teleport: "..code)
-                log_to_file(getgenv().AntiDiscordLogPath, "queue_on_teleport", code)
-                return
-            elseif isPrivacyUrl(str) then
-                warn("[Privacy Protection] Blocked queue_on_teleport: "..code)
-                log_to_file(getgenv().PrivacyLogPath, "queue_on_teleport", code)
-                return
+--== Protect HWID ==--
+local function protectHWID()
+    local RAS = game:GetService("RbxAnalyticsService")
+    if RAS and RAS.GetClientId then
+        local old = RAS.GetClientId
+        hookfunction(old, function(...)
+            if protectionsPaused or isTrustedScript() then
+                return old(...)
+            else
+                error("[HWID Protection] Access to GetClientId() is blocked.", 2)
             end
-        end
-        return old(code)
+        end)
     end
 end
 
--- HTTP hook
+--== Hook HTTP Functions ==--
 local function hook_http(func_name)
     local fn = rawget(getgenv(), func_name)
     if type(fn) == "function" and hookfunction then
         hookfunction(fn, function(data)
             local url = (type(data) == "string" and data) or
                         (type(data) == "table" and (data.Url or data.URL or data.url)) or ""
-            url = url:lower()
             if not isUrlAllowed(url) then
                 if isDiscordUrl(url) then
-                    warn("[Anti-Discord] Blocked HTTP request: "..url)
+                    notify("[Anti-Discord]", "Blocked HTTP: " .. url)
                     log_to_file(getgenv().AntiDiscordLogPath, func_name, url)
                     return nil
-                elseif isPrivacyUrl(url) then
-                    warn("[Privacy Protection] Blocked HTTP request: "..url)
+                elseif not protectionsPaused and isPrivacyUrl(url) then
+                    notify("[Privacy]", "Blocked HTTP: " .. url)
                     log_to_file(getgenv().PrivacyLogPath, func_name, url)
                     return nil
                 end
@@ -171,96 +165,79 @@ local function detect_and_hook_http()
     end
 end
 
--- Block clipboard and command execution
-local function block_discord_methods()
-    if os and os.execute then
-        local old = os.execute
-        os.execute = function(cmd)
-            if type(cmd) == "string" and cmd:lower():find("discord") then
-                warn("[Anti-Discord] Blocked os.execute: "..cmd)
-                log_to_file(getgenv().AntiDiscordLogPath, "os.execute", cmd)
-                return nil
+--== Protection Activator ==--
+local function activateProtections()
+    if isActivated then return end
+    isActivated = true
+
+    ensureProtectionsFolder()
+    loadHWIDExceptions()
+    detect_and_hook_http()
+    protectHWID()
+
+    notify("[Condom]", "Protections activated. Double tap Scroll Lock to pause HWID + IP protection.")
+end
+
+--== Pause Toggle ==--
+local function toggleProtections()
+    protectionsPaused = not protectionsPaused
+    local status = protectionsPaused and "PAUSED" or "RESUMED"
+    notify("[Condom]", "HWID + IP Protections " .. status)
+end
+
+--== Scroll Lock Listener ==--
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.ScrollLock then
+        local now = tick()
+        if now - lastScrollPress <= 0.6 then
+            toggleProtections()
+        elseif not isActivated then
+            activateProtections()
+        end
+        lastScrollPress = now
+    end
+end)
+
+--== Always-on Anti-Discord ==--
+local function enforceAntiDiscord()
+    -- Hook queue_on_teleport
+    if queue_on_teleport then
+        local old = queue_on_teleport
+        queue_on_teleport = function(code)
+            local str = tostring(code):lower()
+            if isDiscordUrl(str) then
+                notify("[Anti-Discord]", "Blocked teleport: " .. code)
+                log_to_file(getgenv().AntiDiscordLogPath, "queue_on_teleport", code)
+                return
             end
-            return old(cmd)
+            return old(code)
         end
     end
 
+    -- Hook setclipboard
     if setclipboard then
         local old = setclipboard
         setclipboard = function(text)
             if type(text) == "string" and text:lower():find("discord.gg") then
-                warn("[Anti-Discord] Blocked setclipboard: "..text)
+                notify("[Anti-Discord]", "Blocked clipboard: " .. text)
                 log_to_file(getgenv().AntiDiscordLogPath, "setclipboard", text)
-                return nil
+                return
             end
             return old(text)
         end
     end
 end
 
-local function block_privacy_methods()
-    local suspicious_cmds = {
-        "ipconfig", "ifconfig", "systeminfo", "wmic", "powershell",
-        "getmac", "netstat", "arp", "tracert", "nslookup"
-    }
-
-    if os and os.execute then
-        local old = os.execute
-        os.execute = function(cmd)
-            if type(cmd) == "string" then
-                for _, s in ipairs(suspicious_cmds) do
-                    if cmd:lower():find(s, 1, true) then
-                        warn("[Privacy Protection] Blocked os.execute: "..cmd)
-                        log_to_file(getgenv().PrivacyLogPath, "os.execute", cmd)
-                        return nil
-                    end
-                end
-            end
-            return old(cmd)
-        end
+--== Auto Activation Timer ==--
+task.delay(75, function()
+    if not isActivated then
+        activateProtections()
     end
+end)
 
-    if setclipboard then
-        local old = setclipboard
-        setclipboard = function(text)
-            if type(text) == "string" then
-                for _, s in ipairs(privacyDomains) do
-                    if text:lower():find(s, 1, true) then
-                        warn("[Privacy Protection] Blocked setclipboard: "..text)
-                        log_to_file(getgenv().PrivacyLogPath, "setclipboard", text)
-                        return nil
-                    end
-                end
-            end
-            return old(text)
-        end
-    end
+--== Initial Notifications ==--
+wait(10)
+notify("[Condom]", "Press Scroll Lock to activate. (Auto-Activates after 75 seconds)")
 
-    if io and io.popen then
-        local old = io.popen
-        io.popen = function(cmd)
-            if type(cmd) == "string" then
-                for _, s in ipairs(suspicious_cmds) do
-                    if cmd:lower():find(s, 1, true) then
-                        warn("[Privacy Protection] Blocked io.popen: "..cmd)
-                        log_to_file(getgenv().PrivacyLogPath, "io.popen", cmd)
-                        return nil
-                    end
-                end
-            end
-            return old(cmd)
-        end
-    end
-end
-
--- Initialization
-ensureProtectionsFolder()
-loadHWIDExceptions()
-detect_and_hook_http()
-block_discord_methods()
-block_privacy_methods()
-protectHWID()
-
--- Final log
-local count = #hwidExceptions
-print("[✅ 5ivee's Anti-Discord & HWID Protection loaded with "..count.." HWID exception"..(count==1 and "" or "s")..".]")
+--== Init ==--
+enforceAntiDiscord() -- Always-on
