@@ -1,8 +1,4 @@
--- THIS BREAKS LUARMOR & LURAPH SCRIPTS! EXECUTE THEM BEFORE ENABLING THIS WITH THE SCROLL LOCK KEY
--- After executing, check workspace\Protections to edit what scripts can access your HWID
--- Change settings in lines 6-8, 99, 107, 211, and 275
-
---== CONFIG ==--
+--== Config ==--
 getgenv().AntiDiscordLogPath = "Protections/anti_discord_log.txt"
 getgenv().PrivacyLogPath = "Protections/privacy_block_log.txt"
 getgenv().EnablePrivacyLogs = true
@@ -20,7 +16,7 @@ local Players = game:GetService("Players")
 local isActivated = false
 local protectionsPaused = false
 local lastScrollPress = 0
-local bypassTimeoutTask = nil -- Added to track the auto-resume timer
+local pauseTimer = nil
 
 --== Notify Function ==--
 local function notify(title, text)
@@ -83,7 +79,7 @@ local function isTrustedScript()
     return false
 end
 
---== Always-On Anti-Discord ==--
+--== Logging ==--
 local function log_to_file(path, source, detail)
     if not path or not source or not detail then return end
     local line = string.format("[%s] Blocked %s: %s\n", os.date(), source, detail)
@@ -103,13 +99,13 @@ local allowedUrls = {
     "raw.githubusercontent.com", "github.com", "gist.github.com", "api.github.com"
 }
 
-local discordDomains = { "discord.gg", "discordapp.com", "discord.com" }
-local privacyDomains = {
-    "ipify.org", "ip-api.com", "ifconfig.me", "icanhazip.com", "whatismyipaddress.com",
-    "grabify.link", "iplogger.org", "iplogger.com", "iplogger.co", "yip.su", "2no.co", "blasze.com",
-    "ipinfo.io", "checkip.amazonaws.com", "ipwhois.app", "ipdata.co", "geojs.io",
-    "myexternalip.com", "ipecho.net", "wtfismyip.com", "dnsleaktest.com", "browserleaks.com",
-    "ping.pe", "check-host.net", "ipchicken.com"
+local discordDomains = { "discord%.gg", "discordapp%.com", "discord%.com" }
+local privacyDomainsPatterns = {
+    "ipify%.org", "ip%-api%.com", "ifconfig%.me", "icanhazip%.com", "whatismyipaddress%.com",
+    "grabify%.link", "iplogger%.org", "iplogger%.com", "iplogger%.co", "yip%.su", "2no%.co", "blasze%.com",
+    "ipinfo%.io", "checkip%.amazonaws%.com", "ipwhois%.app", "ipdata%.co", "geojs%.io",
+    "myexternalip%.com", "ipecho%.net", "wtfismyip%.com", "dnsleaktest%.com", "browserleaks%.com",
+    "ping%.pe", "check%-host%.net", "ipchicken%.com"
 }
 
 local function isUrlAllowed(url)
@@ -122,17 +118,16 @@ end
 
 local function isDiscordUrl(url)
     url = url:lower()
-    for _, d in ipairs(discordDomains) do
-        if url:find(d, 1, true) then return true end
+    for _, pattern in ipairs(discordDomains) do
+        if url:find(pattern) then return true end
     end
     return false
 end
 
 local function isPrivacyUrl(url)
     url = url:lower()
-    for _, p in ipairs(privacyDomains) do
-        if url:find(p, 1, true) then return true
-        end
+    for _, pattern in ipairs(privacyDomainsPatterns) do
+        if url:find(pattern) then return true end
     end
     return false
 end
@@ -183,6 +178,29 @@ local function detect_and_hook_http()
     end
 end
 
+--== Toggle Protections (Pause/Resume) ==--
+local function toggleProtections()
+    protectionsPaused = not protectionsPaused
+    local status = protectionsPaused and "PAUSED" or "RESUMED"
+    notify("[Condom]", "HWID + IP Protections " .. status)
+
+    -- Auto resume protections after 75 seconds if paused
+    if protectionsPaused then
+        if pauseTimer then
+            task.cancel(pauseTimer)
+        end
+        pauseTimer = task.delay(75, function()
+            protectionsPaused = false
+            notify("[Condom]", "HWID + IP Protections AUTO-RESUMED after timeout")
+        end)
+    else
+        if pauseTimer then
+            task.cancel(pauseTimer)
+            pauseTimer = nil
+        end
+    end
+end
+
 --== Protection Activator ==--
 local function activateProtections()
     if isActivated then return end
@@ -194,34 +212,6 @@ local function activateProtections()
     protectHWID()
 
     notify("[Condom]", "Protections activated. Double tap Scroll Lock to pause HWID + IP protection.")
-end
-
---== Pause Toggle with Auto-Resume Timeout ==--
-local function toggleProtections()
-    protectionsPaused = not protectionsPaused
-    local status = protectionsPaused and "PAUSED" or "RESUMED"
-    notify("[Condom]", "HWID + IP Protections " .. status)
-
-    if protectionsPaused then
-        -- Start auto-resume timer (75 seconds)
-        if bypassTimeoutTask then
-            bypassTimeoutTask:Cancel()
-            bypassTimeoutTask = nil
-        end
-        bypassTimeoutTask = task.delay(75, function() --auto resume timer
-            if protectionsPaused then
-                protectionsPaused = false
-                notify("[Condom]", "HWID + IP Protections auto-RESUMED after timeout")
-                bypassTimeoutTask = nil
-            end
-        end)
-    else
-        -- User manually resumed protections, cancel timer if any
-        if bypassTimeoutTask then
-            bypassTimeoutTask:Cancel()
-            bypassTimeoutTask = nil
-        end
-    end
 end
 
 --== Scroll Lock Listener ==--
@@ -282,4 +272,4 @@ end
 notify("[Condom]", "Press Scroll Lock to activate. (Auto-Activates after 75 seconds)")
 
 --== Init ==--
-enforceAntiDiscord() -- Always-on
+enforceAntiDiscord()
