@@ -34,8 +34,19 @@ end
 
 --== Helpers ==--
 local function ensureProtectionsFolder()
-    if isfolder and not isfolder(ProtectionsFolderName) then
-        makefolder(ProtectionsFolderName)
+    if isfolder then
+        local folders = listfiles and listfiles("") or {} -- root directory
+        for _, f in ipairs(folders) do
+            local name = f:match("[^/\\]+$") -- extract folder/file name from path
+            if name and name:lower() == ProtectionsFolderName:lower() and isfolder(f) then
+                ProtectionsFolderName = name -- use correct casing
+                return
+            end
+        end
+        -- If folder not found, create it
+        if not isfolder(ProtectionsFolderName) then
+            makefolder(ProtectionsFolderName)
+        end
     end
 end
 
