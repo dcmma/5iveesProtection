@@ -1,11 +1,10 @@
 -- THIS BREAKS LUARMOR & LURAPH SCRIPTS! EXECUTE THEM BEFORE ENABLING THIS WITH THE SCROLL LOCK KEY
 -- After executing, check workspace\Protections to edit what scripts can access your HWID
--- Change settings in line 87, 95, and 235
+-- Change settings in lines 6-8, 87, 95, and 235
 
 --== CONFIG ==--
 getgenv().AntiDiscordLogPath = "Protections/anti_discord_log.txt"
 getgenv().PrivacyLogPath = "Protections/privacy_block_log.txt"
-getgenv().EnableAntiDiscordLogs = true -- Always enabled internally
 getgenv().EnablePrivacyLogs = true
 
 local ProtectionsFolderName = "Protections"
