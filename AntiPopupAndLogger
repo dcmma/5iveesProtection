@@ -1,4 +1,6 @@
 -- THIS BREAKS LUARMOR & LURAPH SCRIPTS! EXECUTE THEM BEFORE ENABLING THIS WITH THE SCROLL LOCK KEY
+-- After executing, check workspace\Protections to edit what scripts can access your HWID
+-- Change settings in line 87, 95, and 235
 
 --== CONFIG ==--
 getgenv().AntiDiscordLogPath = "Protections/anti_discord_log.txt"
@@ -13,6 +15,7 @@ local hwidExceptions = {}
 --== Services ==--
 local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
+local Players = game:GetService("Players")
 
 --== Flags ==--
 local isActivated = false
@@ -236,7 +239,10 @@ task.delay(75, function()
 end)
 
 --== Initial Notifications ==--
-wait(10)
+local player = Players.LocalPlayer
+if not player.Character or not player.Character.Parent then
+    player.CharacterAdded:Wait()
+end
 notify("[Condom]", "Press Scroll Lock to activate. (Auto-Activates after 75 seconds)")
 
 --== Init ==--
