@@ -294,10 +294,14 @@ end)
 
 --== Initial Notifications ==--
 local player = Players.LocalPlayer
-if not player.Character or not player.Character.Parent then
-    player.CharacterAdded:Wait()
-end
 notify("[Condom]", "Press Scroll Lock to activate. (Auto-Activates after 75 seconds)")
+
+-- Still wait in the background to make sure protections activate if player isn’t fully loaded
+task.spawn(function()
+    if not player.Character or not player.Character.Parent then
+        player.CharacterAdded:Wait()
+    end
+end)
 
 --== Init ==--
 enforceAntiDiscord()
